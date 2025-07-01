@@ -1,0 +1,318 @@
+---
+title: "Surplus Production Demo"
+author: "Beth Babcock"
+date: ""
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Introduction
+```{r functions}
+library(shiny)
+library(ggplot2)
+library(gridExtra)
+func1<-function(params) {
+    df1<-swo
+    numyears<-dim(df1)[1]
+    B0.K<-1
+    df1$Biomass[1]<-params["K"]*B0.K
+    df1$Est.CPUE[1]<-df1$Biomass[1]*params["q"]
+    for(y in 2:numyears) {
+     df1$Biomass[y]<-max(c(df1$Biomass[y-1]+params["r"]*df1$Biomass[y-1]*(1-df1$Biomass[y-1]/params["K"])-df1$Catch[y-1],0.0001))
+     df1$Est.CPUE[y]<-df1$Biomass[y]*params["q"]
+     df1$SS[y]<-(df1$CPUE[y]-df1$Est.CPUE[y])^2
+    }
+    sum(df1$SS,na.rm=TRUE)
+    }
+func2<-function(df1,params) {
+    numyears<-dim(df1)[1]
+    B0.K<-1
+    df1$Biomass[1]<-params["K"]*B0.K
+    df1$Est.CPUE[1]<-df1$Biomass[1]*params["q"]
+    for(y in 2:numyears) {
+     df1$Biomass[y]<-max(c(df1$Biomass[y-1]+params["r"]*df1$Biomass[y-1]*
+         (1-df1$Biomass[y-1]/params["K"])-df1$Catch[y-1],0.0001))
+     df1$Est.CPUE[y]<-df1$Biomass[y]*params["q"]
+     df1$SS[y]<-(df1$CPUE[y]-df1$Est.CPUE[y])^2
+      }
+     df1 
+    }
+func3<-function(df1,params,HRtype,HR,Quota) {
+    numyears<-dim(df1)[1]
+    B0.K<-1
+    df1$Biomass[1]<-params["K"]*B0.K
+    for(y in 2:numyears) {
+     df1$Biomass[y]<-max(c(df1$Biomass[y-1]+params["r"]*df1$Biomass[y-1]*(1-df1$Biomass[y-1]/params["K"])-df1$Catch[y-1],0.0001))
+    }
+    df1<-rbind(df1,data.frame(Year=rep(0,projnum),Catch=rep(0,projnum),
+      CPUE=rep(NA,projnum),Biomass=rep(0,projnum)))
+    for(y in (numyears+1):(numyears+projnum)) {
+     df1$Year[y]<-df1$Year[y-1]+1
+     df1$Catch[y]<-ifelse(HRtype=="Fraction caught",HR*df1$Biomass[y-1],Quota)
+     df1$Biomass[y]<-max(c(df1$Biomass[y-1]+params["r"]*df1$Biomass[y-1]*
+         (1-df1$Biomass[y-1]/params["K"])-df1$Catch[y-1],0))
+     }
+     df1 
+    }
+
+```
+This demo runs a very simple populations dynamics model, the Schaefer surplus production model, which has a yield curve where the maximum sustainable yield (MSY) occurs at half of the carrying capacity (K).
+```{r}
+df1<-data.frame(Biomass=0:1000)
+df1$Yield<-0.5*df1$Biomass*(1-df1$Biomass/1000)
+ggplot(df1,aes(x=Biomass,y=Yield))+geom_line(col="darkgreen",lwd=2)+
+  ylab("Surplus production = sustainable yield")+
+  xlab("Increasing Biomass or Decreasing F -->")+
+  theme_bw(base_size=16)
+```
+
+We first run the model with fixed parameters, and then use a simple sum of squares method to estimate the parameters from data for North Atlantic swordfish. In a real world stock assessment context, models are generally more complex (e.g. including age structure) and are fitted with more sophisticated statistical methods (Likelihood, Bayesian). The goal of this demo is to help you understand reference points related to Maximum Sustainable Yield, compare fixed catch vs fixed harvest rate strategies, and develop intuition for how fish populations respond to exploitation. 
+
+## Production model with a constant catch quota
+
+The following is an R Shiny App that runs a production model where you can adjust the starting biomass relative to K with the slider. This allows you to specify whether the population is overfished when you begin managing it. You can also adjust the catch quota, which is a constant catch that will be taken every year.
+
+The model is set with K=1000, and r= 0.5, which means that
+$$B_{MSY}=K/2=500$$
+$$H_{MSY}=r/2=0.25$$
+so that
+$$MSY=rK/4=125$$
+
+Try the following scenarios:
+
+**1. Logistic population dynamics without fishing** Set the starting biomass at a small fraction of K (e.g. $B_0/K=0.1$) and set the annual quota to zero. What happens to the biomass over time? 
+
+**2. Sustainable catch levels for a new fishery** Set the starting biomass equal to the carrying capacity ($B_0/K=1$), as would be expected in a population that had never been fished. Now try several different levels of annual quota. 
+
+a. What happens to the population biomass if you enter an annual quota higher than the MSY?
+
+b. What happens to the population biomass if you enter an annual quota lower than the MSY?
+
+**3. Sustainable catch levels for an established fishery** Now set the annual quota at the MSY level and change the starting biomass to half of the carrying capacity, consistent with a population that has been fished for some time at the MSY level. What happens to the biomass over time?
+
+**4. Sustainable catch levels for a depleted fishery**  Now set the starting biomass $B_0/K$ at 0.1, a severely overfished population. What is the highest quota that is sustainable?    
+
+```{r constant catch}
+inputPanel(
+      sliderInput(inputId = "B0.K",
+                  label = "Starting Biomass/K:",
+                  min = 0,
+                  max = 1,
+                  value = 0.1),
+      sliderInput(inputId = "Quota",
+                  label = "Annual Catch Quota:",
+                  min = 0,
+                  max = 1000,
+                  value = 0)
+    )
+renderPlot({
+   numyears<-50
+   K<-1000
+   r<-0.5
+   MSY<-r*K/4
+   Bmsy<-K/2
+   Hmsy<-r/2
+   df1<-data.frame(Year=1:numyears)
+   df1$Biomass[1]<-K*input$B0.K
+   df1$Catch[1]<-input$Quota
+   for(y in 2:numyears) {
+    df1$Biomass[y]<-max(c(df1$Biomass[y-1]+r*df1$Biomass[y-1]*(1-df1$Biomass[y-1]/K)-df1$Catch[y-1],0))
+    df1$Catch[y]<-min(c(df1$Biomass[y],input$Quota))
+   }
+   ggplot(df1,aes(x=Year))+geom_line(aes(y=Biomass),col="blue",lwd=2)+
+    geom_line(aes(y=Catch),col="red",lwd=2)+theme_bw(base_size=16)+
+     ylab("Catch and Biomass")+
+     ggtitle("With Constant Catch Quota, r=0.5,K=1000")+
+     geom_text(x=numyears-2,y=K*0.9,label="Biomass",col="blue",size=10)+
+     geom_text(x=numyears-2,y=K*0.8,label="Catch",col="red",size=10)+
+     ylim(c(0,K))
+    })
+```
+
+## Production model with a fixed harvest fraction
+
+The following is the same production model, but instead of having a total allowable catch quota, you can adjust the fraction of the population caught every year. The fraction of the population catch (i.e. Catch/Biomass) is often called the harvest rate. 
+
+**5. Starting from Bmsy** Set $B_0/K$  equal to 0.5 and set the catch rate equal to any number between zero and 1. What catch rate prevents the population from declining?
+
+**6. Starting with a depleted population**  Set $B_0/K$ equal to 0.1. What catch rate prevents the population from declining? Compare the answer to 5 and 6. Does this make sense?
+
+```{r harvest rate}
+inputPanel(
+       sliderInput(inputId = "B0.K2",
+                  label = "Starting Biomass/K:",
+                  min = 0,
+                  max = 1,
+                  value = 0.1),
+      sliderInput(inputId = "F",
+                  label = "Fraction caught:",
+                  min = 0,
+                  max = 1,
+                  value = 0)
+)
+
+renderPlot({
+   numyears<-50
+   K<-1000
+   r<-0.5
+   MSY<-r*K/4
+   Bmsy<-K/2
+   Hmsy<-r/2
+   df1<-data.frame(Year=1:numyears)
+   df1$Biomass[1]<-K*input$B0.K2
+   df1$Catch[1]<-input$F*df1$Biomass[1]
+   for(y in 2:numyears) {
+    df1$Biomass[y]<-max(c(df1$Biomass[y-1]+r*df1$Biomass[y-1]*(1-df1$Biomass[y-1]/K)-df1$Catch[y-1],0))
+    df1$Catch[y]<-min(c(df1$Biomass[y],input$F*df1$Biomass[y]))
+   }
+   #Make plot
+   ggplot(df1,aes(x=Year))+geom_line(aes(y=Biomass),col="blue",lwd=2)+
+    geom_line(aes(y=Catch),col="red",lwd=2)+theme_bw(base_size=16)+
+     ylab("Catch and Biomass")+
+     ggtitle("With a constant harvest rate strategy")+
+     theme_bw(base_size=16)+
+     geom_text(x=numyears-2,y=K*0.9,label="Biomass",col="blue",size=10)+
+     geom_text(x=numyears-2,y=K*0.8,label="Catch",col="red",size=10)+
+     ylim(c(0,K))
+    })
+
+```
+
+
+## Fitting the model to data
+
+To use a production model for stock assessment, we need to use statistical methods to estimate the parameters of the model. We need to estimate the starting biomass ($B_0/K=1$), r, and K so that we can calculate the biomass in each year from the surplus production minus the catch. We also need the constant of proportionality (q) between biomass and catch per unit effort (CPUE) so we can predict CPUE from biomass. For most methods, we also need to estimate the measurement error in CPUE.  
+
+Let's assume that the measured CPUE is normally distributed around predicted CPUE
+```{r residual distribution}
+   Catch<-125
+   numyears<-50
+   df1<-data.frame(Year=1:numyears)
+   r<-0.5
+   K<-1000
+   q<-0.01
+   sigma<-0.5
+   df1$Biomass[1]<-K
+   df1$Catch[1]<-Catch
+   for(y in 2:numyears) {
+    df1$Biomass[y]<-max(c(df1$Biomass[y-1]+r*df1$Biomass[y-1]*(1-df1$Biomass[y-1]/K)-df1$Catch[y-1],0)) 
+    df1$Catch[y]<-min(c(df1$Biomass[y],Catch))
+   }
+   df1$Est.CPUE<-q*df1$Biomass
+   df1$CPUE<-rnorm(numyears,df1$Est.CPUE,sigma)
+  g1<-ggplot(df1,aes(x=Year))+geom_line(aes(y=Est.CPUE),col="darkred",lwd=2)+
+     geom_point(aes(y=CPUE),col="darkred",lwd=2)+theme_bw(base_size=16)+
+     ylab("CPUE")+
+     theme_bw(base_size=16)
+  g2<-ggplot(df1,aes(x=CPUE-Est.CPUE))+geom_histogram(fill="darkred",bins=20)+
+     theme_bw(base_size=16)+
+     xlab("CPUE-predicted CPUE")+
+     theme_bw(base_size=16)
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+
+We can estimate the parameters, r, K, q, $B_0/K$ and the measurement error $\sigma$ by minimizing the difference between the observed and predicted CPUE. To see how this works in practice, we will fit the data for North Atlantic swordfish from ICCAT(1999).
+
+**7. Fit the model to the swordfish data*,** First use the sliders to explore what values of r, K and q best fit the data. We are fitting the starting biomass at K. For simplicity, we are measuring model fit sum of squares (SS) rather than using Likelihood or Bayesian methods like a real stock assessment would. After you have tried several values, select "Solve" to let R solve for the values that minimize the sum of squares. Does the fit look reasonable?
+
+```{r solve}
+swo<-read.csv("Swordfish.csv")
+inputPanel(
+      # Input: Slider for r ----
+      sliderInput(inputId = "r",
+                  label = "Intrinsic growth rate(r):",
+                  min = 0,
+                  max = 1,
+                  value = 0.8),
+      sliderInput(inputId = "K",
+                  label = "Carrying Capacity(K):",
+                  min = 10,
+                  max = 150000,
+                  value = 70000),
+      sliderInput(inputId = "q",
+                  label = "Catchability:",
+                  min = 0.00001,
+                  max = 0.01,
+                  value = 0.005),
+      selectInput("SolveOpt","Solve?",choices=c("Use slider","Solve"),
+        selected = "Use slider")
+    )
+plot1<-reactive({
+     df2<-func2(swo,c(q=input$q,K=input$K,r=input$r))
+     ggplot(df2,aes(x=Year))+geom_line(aes(y=Biomass*input$q),col="blue",lwd=2)+
+      geom_point(aes(x=Year,y=CPUE))+
+      geom_text(aes(x=1990,y=1200,label=paste("SS=",round(sum(df2$SS,na.rm=TRUE),1))),size=10)+
+      ylab("CPUE (point) and abundance trend (line)")+theme_bw(base_size=16)
+})
+plot2<-reactive({
+     fit1<-nlminb(start=c(q=0.001,K=70000,r=0.8),objective=func1,lower=0)
+     df2<-func2(swo,fit1$par)
+     ggplot(df2,aes(x=Year))+geom_line(aes(y=Biomass*fit1$par["q"]),col="blue",lwd=2)+
+      geom_point(aes(x=Year,y=CPUE))+
+      geom_text(aes(x=1990,y=1000,label=
+         paste0("SS=",round(sum(fit1$objective,na.rm=TRUE),1),
+       "\n r=",round(fit1$par["r"],2),"\n K=",round(fit1$par["K"],1),
+       "\n q=",round(fit1$par["q"],4))),size=10)+
+       ylab("CPUE and abundance trend")+theme_bw(base_size=16)
+    })
+renderPlot({
+      switch(input$SolveOpt, 
+        "Use slider"=plot1(), 
+        "Solve"=plot2()
+      )
+  })
+
+```
+
+## Projections from the production model
+
+**8. Projections** In the following, you can select a harvest control rule and project the population forward 10 years with our estimated values of r and K, with either a fixed catch quota or a catch fraction. What catch quota or catch fraction will rebuild the population to Bmsy in 10 years? Are catch quotas or catch fractions better?
+
+```{r}
+swo<-read.csv("Swordfish.csv")
+projnum<-10
+inputPanel(
+  selectInput("RuleType","Quota or harvest rate?",
+        choices=c("Quota","Fraction caught"),
+        selected = "Quota"),
+    sliderInput(inputId = "TAC",
+                  label = "Constant catch quota:",
+                  min = 0,
+                  max = 10000,
+                  value = 0),
+      sliderInput(inputId = "HR",
+                  label = "Fraction caught (Harvest rate):",
+                  min = 0,
+                  max = 1,
+                  value = 0)
+    )
+
+renderPlot({
+     fit1<-nlminb(start=c(q=0.001,K=70000,r=0.8),objective=func1,lower=0)
+     Bmsy<-fit1$par["K"]/2
+     Hmsy<-fit1$par["r"]/2
+     df3<-func3(swo,fit1$par,input$RuleType,input$HR,input$TAC)
+     df3$H<-df3$Catch/df3$Biomass
+     ggplot(df3,aes(x=Year))+geom_line(aes(y=Biomass/Bmsy),col="blue",lwd=2)+
+      geom_line(aes(x=Year,y=H/Hmsy),lwd=2,col="red")+
+      theme_bw(base_size=16)+
+      ylab("B/Bmsy and H/Hmsy")+
+      geom_hline(yintercept=1,lty=2)+
+      geom_vline(xintercept=1999.5)+
+      geom_text(x=2000,y=1.9,label="Begin projections",hjust=0,size=5)+
+      geom_text(x=1950,y=1.5,label="Biomass/Bmsy",col="blue",size=10,hjust=0)+
+      geom_text(x=1950,y=1.3,label="H/Hmsy",col="red",size=10,hjust=0)
+    })
+```
+
+## Conclusion
+
+This demo shows the behavior of a very simple population dynamics model. It shows that catches have to be much lower than the maximum sustainable yield to rebuild an overfished population, and that the constant harvest rates rebuild faster than constant catch quotas because the respond to changes in biomass. In practice, the population dynamics of any fish species would include more variability and uncertainty than we allowed in this model, as, for example, environmental conditions can cause good and bad recruitment years, variability in growth rates, and fish movement. Also, managers would not be able to control catch perfectly. Thus, in practice, fisheries are generally not managed for MSY, but rather for more precautionary reference points. Also, most fisheries are assessed with age structured modes to account for size-selectivity, time lags for slow growing species with a late age at reproduction, and other elements of the population dynamics. 
+
+For questions and feedback on this demo, please contact ebabcock@miami.edu
