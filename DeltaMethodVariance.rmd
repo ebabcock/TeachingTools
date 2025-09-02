@@ -1,0 +1,147 @@
+---
+title: "Delta Method Variances"
+author: "Beth Babcock"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Delta method calculation of confidence intervals or prediction intervals using link-scale estimates and standard errors.  Also, calculate variance of a product of a lognormal and logit variable. This uses glmmTMB because predict.glmmTMB gives a variance/covariance matrix. 
+
+The delta method is a generic method for estimating variance of a function of a variable, such as a GLM link function. 
+https://cran.r-project.org/web/packages/modmarg/vignettes/delta-method.html
+https://www.r-bloggers.com/2018/01/delta-method-standard-errors/
+```{r,message=FALSE}
+library(tidyverse)
+library(glmmTMB)
+```
+
+Logit and inverse logit functions. 
+
+```{r}
+logit<-function(x) log(x)/log(1-x)
+ilogit<-function(x) exp(x)/(1+exp(x))
+```
+
+First, some toy data to work with. Intercept is zero and slope is 0.5 for logit(P). Intercept is zero and slope is 2 for log(intensity).
+
+```{r}
+toy<-data.frame(x=runif(1000)) %>%
+  mutate(p=ilogit(0.5*x),
+         presence=rbinom(1000,1,p),
+         mu=x,
+         intensity=rlnorm(1000,mu,0.2)) 
+view(toy)
+```
+
+### Delta method for log
+
+Run a log link GLM
+
+```{r}
+log.glm<-glmmTMB(intensity~x,data=toy,family=Gamma(link="log"))
+```
+
+Get mean and se in log scale, for arbitrary new data.
+
+```{r}
+newData<-data.frame(x=seq(0,1,0.1))
+response.fit<-predict(log.glm,
+                  type="response",
+                  se.fit=TRUE,
+                  newdat=newData) %>%
+  as.data.frame()
+response.fit
+```
+
+Same with delta method
+
+```{r}
+link.fit<-predict(log.glm,
+                  type="link",
+                  se.fit=TRUE,
+                  cov.fit=TRUE,
+                  newdat=newData) 
+link.fit$mean<-exp(link.fit$fit)
+link.fit$deriv<-exp(link.fit$fit) #derivative of exp(x) is exp(x)
+link.fit$var<-link.fit$deriv * diag(link.fit$cov.fit) * link.fit$deriv
+
+logEstimates<-data.frame(est=link.fit$mean,
+                         se=sqrt(link.fit$var))
+logEstimates
+#Same answer as from type = "response"
+```
+
+If we want a function of the all the points, like their mean, we have to incorporate the full vcov matrix, because the correlation among the confidence intervals of the points changes the value of the sum. So, do the full matrix multiplication. 
+
+```{r}
+meanVal<-mean(link.fit$mean)
+VarianceOfSum<-t(link.fit$deriv) %*% link.fit$cov.fit %*% link.fit$deriv
+VarianceOfMean<-VarianceOfSum*(1/nrow(newData))^2
+SEofMean<-sqrt(VarianceOfMean)
+SEofMean
+```
+
+### Delta method for logit
+
+Run a logit-link binomial GLM
+
+```{r}
+logit.glm<-glmmTMB(presence~x,data=toy,family="binomial")
+```
+
+Get predicted probability and se in probability scale, for arbitrary new data.
+
+```{r}
+newData<-data.frame(x=seq(0,1,0.1))
+prob.fit<-predict(logit.glm,
+                  type="response",
+                  se.fit=TRUE,
+                  newdat=newData) %>%
+  as.data.frame()
+prob.fit
+```
+
+Now, get the same in logit scale and convert to probability, using delta method.  
+
+```{r}
+logit.fit<-predict(logit.glm,type="link",
+                   se.fit=TRUE,
+                   cov.fit=TRUE,
+                   newdata=newData)
+logit.fit$prob<-ilogit(logit.fit$fit)
+logit.fit$deriv<-exp(logit.fit$fit)/(exp(logit.fit$fit)+1)^2  #derivative of inverse logit
+logit.fit$var<-logit.fit$deriv * diag(logit.fit$cov.fit) * logit.fit$deriv
+probEstimates<-data.frame(p.est=logit.fit$prob,
+                         p.se=sqrt(logit.fit$var))
+probEstimates
+#Same answer as from type = "response"
+```
+
+Now calculate the mean across all the probabilities
+
+
+```{r}
+meanPVal<-mean(logit.fit$prob)
+VarianceOfPSum<-t(logit.fit$deriv) %*% logit.fit$cov.fit %*% logit.fit$deriv
+VarianceOfPMean<-VarianceOfPSum*(1/nrow(newData))^2
+SEofPMean<-sqrt(VarianceOfPMean)
+SEofPMean
+```
+
+Variance of product for all data points
+
+```{r}
+allEst<-bind_cols(probEstimates,logEstimates) %>%
+  mutate(product=p.est*est,
+         se.product=sqrt(p.est^2*se^2+est^2*p.se^2))
+allEst
+```
+
+Variance of product for the means
+
+```{r}
+ProductOfMeans<-meanVal*meanPVal
+SeOfProduct<-sqrt(meanVal^2*SEofMean^2+meanPVal^2*SEofPMean^2)
+SeOfProduct
+```
+
