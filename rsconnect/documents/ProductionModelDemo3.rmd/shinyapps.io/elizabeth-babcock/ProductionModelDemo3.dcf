@@ -1,0 +1,12 @@
+name: ProductionModelDemo3
+title: ProductionModelDemo3
+username: elizabeth-babcock
+account: elizabeth-babcock
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15359272
+bundleId: 10873622
+url: https://elizabeth-babcock.shinyapps.io/ProductionModelDemo3/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

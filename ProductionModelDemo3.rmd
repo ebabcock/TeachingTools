@@ -190,7 +190,7 @@ renderPlot({
 
 ## Fitting the model to data
 
-To use a production model for stock assessment, we use statistical methods to estimate the parameters r and K so that we can calculate the biomass in each year from the surplus production minus the catch. We also estimate catchability (q), which is the constant of proportionality between the catch per unit effort (CPUE) and the biomass [^1]. For example, We can estimate the parameters by minimizing the sum of squared (SS) difference between the observed and predicted catch per unit of effort (CPUE). To see how this works in practice, we will fit the data for North Atlantic swordfish from ICCAT(1999).
+To use a production model for stock assessment, we use statistical methods to estimate the parameters r, K, and q (the constant of proportionality between q CPUE and biomass) that provide the best fit of the model to the CPUE data[^1]. To see how this works, we will fit the data for North Atlantic swordfish from ICCAT(1999).
 
 ```{r, plot swordfish,warning=FALSE}
 swo<-read.csv("Swordfish.csv")
@@ -201,7 +201,7 @@ swo2<-ggplot(swo,aes(x=Year,y=Catch))+
 grid.arrange(swo1,swo2,ncol=2)
 ```
 
-**6. Fit the model to the swordfish data ** First use the sliders to explore what values of r, K and catchability (q, the constant of proportionality between the index and the biomass) best fit the data. After you have tried several values, select "Solve" to let R solve for the values that minimize the sum of squares (SS). Does the fit look reasonable?
+**5. Fit the model to the swordfish data ** First use the sliders to explore what values of r, K and q best fit the data. After you have tried several values, select "Solve" to let R solve for the values that minimize the sum of squares (SS). Does the fit look reasonable?
 
 ```{r solve}
 swo<-read.csv("Swordfish.csv")
@@ -254,7 +254,7 @@ renderPlot({
 
 ## Projections from the production model
 
-**7. Projections** In the following, you can select a harvest control rule and project the population forward 10 years with our estimated values of r and K, with either a fixed catch quota or a catch fraction. 
+**6. Projections** In the following, you can select a harvest control rule and project the population forward 10 years with our estimated values of r and K, with either a fixed catch quota or a catch fraction. 
 
 a. What catch quota or catch fraction will rebuild the population to Bmsy in 10 years? 
 
@@ -299,8 +299,10 @@ renderPlot({
 
 ## Conclusion
 
-This demo shows the behavior of a very simple population dynamics model. It shows that catches have to be much lower than the maximum sustainable yield to rebuild an overfished population, and that the constant harvest rates rebuild faster than constant catch quotas because they respond to changes in biomass. In practice, the population dynamics of any fish species would include more variability and uncertainty than we allowed in this model, as, for example, environmental conditions can cause good and bad recruitment years, variability in growth rates, and fish movement. Also, managers would not be able to control catch perfectly. Thus, in practice, fisheries are generally not managed for MSY, but rather for more precautionary reference points. Also, most fisheries are assessed with age structured modes to account for size-selectivity, time lags for slow growing species with a late age at reproduction, and other elements of the population dynamics. 
+This demo shows the behavior of a very simple population dynamics model. It shows that catches have to be much lower than the maximum sustainable yield to rebuild an overfished population, and that the constant harvest rates rebuild faster than constant catch quotas because they respond to changes in biomass. 
+
+In practice, the population dynamics of any fish species would include more variability and uncertainty than we allowed in this model, as, for example, environmental conditions can cause good and bad recruitment years, variability in growth rates, and fish movement. Also, managers would not be able to control catch perfectly. Thus, in practice, fisheries are generally not managed for MSY, but rather for more precautionary reference points. Also, most fisheries are assessed with age structured modes to account for size-selectivity, time lags for slow growing species with a late age at reproduction, and other elements of the population dynamics. 
 
 For questions and feedback on this demo, please contact ebabcock@miami.edu
 
-[^1]: For most methods, we also need to estimate the measurement error in CPUE. we will assume that the measured CPUE is normally distributed around predicted CPUE. We can either estimate the biomass in the first year, or assume it is equal to K, as in this case. 
+[^1]: For this demo, we assume that the biomass in the first year is equal to K. We will assume that the measured CPUE is normally distributed around predicted CPUE, but we don't need to estimate the normal observation error variance, because we will use sums of squares for the model fitting.
