@@ -1,0 +1,164 @@
+---
+title: "Size selective fisheries and growth"
+author: "Beth Babcock"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r,message=FALSE,echo=FALSE}
+library(ggplot2)
+library(gganimate)
+theme_set(theme_classic())
+vonbert=function(Linf,K,t0,age) Linf*(1-exp(-K*(age-t0)))
+age=1:20
+Kave=0.3
+Kcv=0.1
+Linfave=100
+Linfcv=0.1
+n=100
+Linf=rnorm(n,Linfave,Linfcv*Linfave)
+K=rnorm(n,Kave,Kcv*Kave)
+t0=0
+df=expand.grid(Age=age,Individual=as.factor(1:n))
+df$Length=vonbert(Linf[df$Individual],K[df$Individual],t0,df$Age)
+```
+
+Assume fish in a cohort grow according to the von Bertalanffy growth curve, where $K$ and $L_\infty$ for each individual are drawn from a random normal distribution with a mean and variance. The growth of individuals and the mean size will look like this over the age of the cohort.
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+p=ggplot(df,aes(x=Age,y=Length,color=Individual)) +
+  geom_line()+ 
+  theme(legend.position = "none")+
+  stat_summary(fun=mean,geom="line",lwd=2,aes(group=1))+
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))+
+  ggtitle("With no mortality")
+p+transition_reveal(Age)
+#anim_save(filename="Nofishery.gif")
+```
+
+If the fish are subject to random mortality, then eliminating individual fish will not change the average size at age (dark line).
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+MM=0.02
+df2=df
+df2$Alive=rep(1,dim(df)[1])
+for(i in 1:dim(df)[1]) {
+  if(df2$Age[i]>1)
+  df2$Alive[i]=sample(c(0,1),1,prob=c(MM,1-MM))*df2$Alive[i-1]
+}
+df2$Length[df2$Alive==0]=NA  
+p2=ggplot(df2,aes(x=Age,y=Length,color=Individual)) +geom_line()+ theme(legend.position = "none")+stat_summary(fun=mean,geom="line",lwd=3,aes(group=1))+theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))+ggtitle("With mortality") 
+p2+transition_reveal(Age)
+#anim_save(filename="WithMort.gif")
+```
+
+
+However, adding a fishery with a minimize size limit will preferentially remove the fish that happen to grow faster or larger, reducing the average size for fish at older ages. 
+
+
+```{r,message=FALSE,echo=FALSE,warning=FALSE}
+Limit=90
+Mlow=0.001
+Mhigh=0.2
+df3=df
+df3$Alive=rep(1,dim(df)[1])
+rm(MM)
+for(i in 1:dim(df3)[1]) {
+  MM=ifelse(df3$Length[i]>=Limit,Mhigh,Mlow)  
+  if(df3$Age[i]>1)
+  df3$Alive[i]=sample(c(0,1),1,prob=c(MM,1-MM))*df3$Alive[i-1]
+}
+df3$Length[df3$Alive==0]=NA  
+p3=ggplot(df3,aes(x=Age,y=Length,color=Individual)) +geom_line()+ theme(legend.position = "none")+
+    stat_summary(fun=mean,geom="line",lwd=3,aes(group=1))+theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold")) +geom_abline(intercept=Limit,slope=0)+ggtitle("With size limit")
+p3+transition_reveal(Age)
+#anim_save(filename="SizeLimit.gif")
+```
+
+If you take a sample and fit the von Bertalanffy growth curve, with random mortality, the estimated parameters are close to correct. This is one random draw. 
+
+```{r,message=FALSE,echo=FALSE,warning=FALSE}
+N=30
+getsample=sample(which(df2$Alive==1),N)
+sam2=df[getsample,]
+fit2=nls(Length~Linf*(1-exp(-K*(Age))),data=sam2,start=c(Linf=99,K=0.3))
+pred2=data.frame(Age=age,L=vonbert(coef(fit2)[1],coef(fit2)[2],0,age))
+truecurve=data.frame(Age=age,L=vonbert(Linfave,Kave,0,age))
+s2=ggplot() +
+  geom_point(data=sam2,aes(x=Age,y=Length))+ 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold")) + 
+  geom_line(data=pred2,aes(x=Age,y=L,color="estimated"),lwd=1)+
+    geom_line(data=truecurve,aes(x=Age,y=L,color="true"),lwd=2) +
+  ggtitle("Fit to random sample")+
+  scale_color_manual(values=c("red","black"))+
+  labs(color="")
+
+s2
+```
+
+But with a size limit, the estimates are biased by the fact that few large fish survive to be old. This is one random draw. 
+
+```{r,message=FALSE,echo=FALSE,warning=FALSE}
+N=30
+getsample=sample(which(df3$Alive==1),N)
+sam3=df[getsample,]
+fit3=nls(Length~Linf*(1-exp(-K*(Age))),data=sam3,start=c(Linf=99,K=0.3))
+pred3=data.frame(Age=age,L=vonbert(coef(fit3)[1],coef(fit3)[2],0,age))
+s3=ggplot() +
+  geom_point(data=sam3,aes(x=Age,y=Length))+ 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold")) + 
+  geom_line(data=pred3,aes(x=Age,y=L,color="estimated"),lwd=1)+
+  geom_line(data=truecurve,aes(x=Age,y=L,color="true"),lwd=2)+
+  ggtitle("Fit to random sample with size limit")+
+  scale_color_manual(values=c("red","black"))+
+  labs(color="")
+s3
+```
+
+
+If you fit multiple random samples with no size limit and plot the distribution of estimated values, you can see that they are correct on average. In this plot, colors are random draws. The black line is correct.  
+
+```{r,message=FALSE,echo=FALSE,warning=FALSE}
+sims=10
+sim2=data.frame(Simulation=1:10)
+sim3=sim2
+for(i in 1:sims) {
+  getsample=sample(which(df2$Alive==1),N)
+  fitval=nls(Length~Linf*(1-exp(-K*(Age))),data=df2[getsample,],start=c(Linf=99,K=0.3))
+  sim2$Linf[i]=coef(fitval)[1]
+  sim2$K[i]=coef(fitval)[2]
+  getsample=sample(which(df3$Alive==1),N)
+  fitval=nls(Length~Linf*(1-exp(-K*(Age))),data=df3[getsample,],start=c(Linf=99,K=0.3))
+  sim3$Linf[i]=coef(fitval)[1]
+  sim3$K[i]=coef(fitval)[2]
+}
+#sim2
+#sim3
+
+x2=expand.grid(Simulation=as.factor(1:sims),Age=age)
+x2$Length=vonbert(sim2$Linf[x2$Simulation],sim2$K[x2$Simulation],0,x2$Age)
+t2=ggplot() + 
+  theme(legend.position = "none")+
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold")) + geom_line(data=x2,aes(x=Age,y=Length,color=Simulation),lwd=1)+
+    geom_line(data=truecurve,aes(x=Age,y=L),lwd=2,col="black")+ggtitle("Fitted models without size limit")
+t2
+```
+
+With the size limit, the bias is clear. 
+
+```{r,message=FALSE,echo=FALSE,warning=FALSE}
+x3=expand.grid(Simulation=as.factor(1:sims),Age=age)
+x3$Length=vonbert(sim3$Linf[x3$Simulation],sim3$K[x3$Simulation],0,x2$Age)
+t3=ggplot() + theme(legend.position = "none")+theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold")) + geom_line(data=x3,aes(x=Age,y=Length,color=Simulation),lwd=1)+
+    geom_line(data=truecurve,aes(x=Age,y=L),lwd=2,col="black")+ggtitle("Fitted models with size limit")
+t3
+
+
